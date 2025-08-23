@@ -1,6 +1,6 @@
 #
 # Copyright (C) 2006-2012 OpenWrt.org
-#               2014-2020 Noah Meyerhans <frodo@morgul.net>
+#               2014-2024 Noah Meyerhans <frodo@morgul.net>
 #
 # This is free software, licensed under the GNU General Public License v2.
 # See /LICENSE for more information.
@@ -9,8 +9,8 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=bind
-PKG_VERSION:=9.18.11
-PKG_RELEASE:=3
+PKG_VERSION:=9.20.11
+PKG_RELEASE:=1
 USERID:=bind=57:bind=57
 
 PKG_MAINTAINER:=Noah Meyerhans <frodo@morgul.net>
@@ -22,7 +22,7 @@ PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION).tar.xz
 PKG_SOURCE_URL:= \
 	https://www.mirrorservice.org/sites/ftp.isc.org/isc/bind9/$(PKG_VERSION) \
 	https://ftp.isc.org/isc/bind9/$(PKG_VERSION)
-PKG_HASH:=8ff3352812230cbcbda42df87cad961f94163d3da457c5e4bef8057fd5df2158
+PKG_HASH:=4da2d532e668bc21e883f6e6d9d3d81794d9ec60b181530385649a56f46ee17a
 
 PKG_FIXUP:=autoreconf
 PKG_REMOVE_FILES:=aclocal.m4 libtool.m4
@@ -34,10 +34,14 @@ PKG_BUILD_PARALLEL:=1
 PKG_CONFIG_DEPENDS := \
 	CONFIG_BIND_LIBJSON \
 	CONFIG_BIND_LIBXML2 \
+	CONFIG_BIND_JEMALLOC \
 	CONFIG_BIND_ENABLE_DOH \
 	CONFIG_BIND_ENABLE_GSSAPI
 
-PKG_BUILD_DEPENDS += BIND_LIBXML2:libxml2 BIND_LIBJSON:libjson-c
+PKG_BUILD_DEPENDS += \
+	BIND_LIBXML2:libxml2 \
+	BIND_LIBJSON:libjson-c \
+	BIND_JEMALLOC:libjemalloc
 
 include $(INCLUDE_DIR)/package.mk
 include $(INCLUDE_DIR)/nls.mk
@@ -61,11 +65,13 @@ define Package/bind-libs
 	+libpthread \
 	+libatomic \
 	+libuv \
+	+liburcu \
 	+BIND_ENABLE_DOH:libnghttp2 \
 	+BIND_ENABLE_GSSAPI:krb5-libs \
 	+BIND_ENABLE_GSSAPI:libcomerr \
 	+BIND_LIBXML2:libxml2 \
-	+BIND_LIBJSON:libjson-c
+	+BIND_LIBJSON:libjson-c \
+	+BIND_JEMALLOC:libjemalloc
   TITLE:=bind shared libraries
   URL:=https://www.isc.org/software/bind
 endef
@@ -149,7 +155,6 @@ CONFIGURE_ARGS += \
 	--disable-geoip \
 	--with-openssl="$(STAGING_DIR)/usr" \
 	--without-lmdb \
-	--enable-epoll \
 	--without-readline \
 	--sysconfdir=/etc/bind
 
@@ -168,6 +173,14 @@ ifdef CONFIG_BIND_LIBXML2
 else
 	CONFIGURE_ARGS += \
 		--with-libxml2=no
+endif
+
+ifdef CONFIG_BIND_JEMALLOC
+	CONFIGURE_ARGS += \
+		--with-jemalloc=yes
+else
+	CONFIGURE_ARGS += \
+		--without-jemalloc
 endif
 
 ifdef CONFIG_BIND_ENABLE_DOH
