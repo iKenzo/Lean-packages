@@ -6,12 +6,12 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=adguardhome
-PKG_VERSION:=0.107.64
+PKG_VERSION:=0.107.79
 PKG_RELEASE:=1
 
 PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION).tar.gz
 PKG_SOURCE_URL:=https://codeload.github.com/AdguardTeam/AdGuardHome/tar.gz/v$(PKG_VERSION)?
-PKG_HASH:=a6b61d3c102fa47072a7230382d438f3d408f74ffae3aff7d330adad90ed169c
+PKG_HASH:=5f4fa119f24ea741bb8cecfa74203165fe6b86b904cef05ff429fb227b07d425
 PKG_BUILD_DIR:=$(BUILD_DIR)/AdGuardHome-$(PKG_VERSION)
 
 PKG_LICENSE:=GPL-3.0-only
@@ -37,20 +37,21 @@ include $(INCLUDE_DIR)/package.mk
 include ../../lang/golang/golang-package.mk
 
 define Package/adguardhome
-  SECTION:=net
-  CATEGORY:=Network
-  TITLE:=Network-wide ads and trackers blocking DNS server
-  URL:=https://github.com/AdguardTeam/AdGuardHome
-  DEPENDS:=$(GO_ARCH_DEPENDS) +ca-bundle
+	SECTION:=net
+	CATEGORY:=Network
+	TITLE:=Network-wide ads and trackers blocking DNS server
+	URL:=https://github.com/AdguardTeam/AdGuardHome
+	DEPENDS:=$(GO_ARCH_DEPENDS) +ca-bundle
+	USERID:=adguardhome=853:adguardhome=853
 endef
 
 define Package/adguardhome/conffiles
-/etc/adguardhome.yaml
+/etc/adguardhome/adguardhome.yaml
 /etc/config/adguardhome
 endef
 
 define Package/adguardhome/description
-  Free and open source, powerful network-wide ads and trackers blocking DNS server.
+Free and open source, powerful network-wide ads and trackers blocking DNS server.
 endef
 
 FRONTEND_FILE:=$(PKG_NAME)_frontend-$(PKG_VERSION).tar.gz
@@ -58,7 +59,7 @@ define Download/adguardhome_frontend
 	URL:=https://github.com/AdguardTeam/AdGuardHome/releases/download/v$(PKG_VERSION)/
 	URL_FILE:=AdGuardHome_frontend.tar.gz
 	FILE:=$(FRONTEND_FILE)
-	HASH:=f0c1e4d6e673d4d26d52947cdb220682aa554158d331fa044576d1794b82e325
+	HASH:=30184c157d4aefe5371b575a43c0ab5a7314aef039a820cc421ea67bab994ce8
 endef
 
 define Build/Prepare
@@ -69,14 +70,20 @@ endef
 
 define Package/adguardhome/install
 	$(call GoPackage/Package/Install/Bin,$(1))
+	$(INSTALL_DIR) $(1)/etc/capabilities
+	$(INSTALL_CONF) $(CURDIR)/files/adguardhome.json $(1)/etc/capabilities/adguardhome.json
+
 	$(INSTALL_DIR) $(1)/etc/init.d
-	$(INSTALL_BIN) ./files/adguardhome.init $(1)/etc/init.d/adguardhome
+	$(INSTALL_BIN) $(CURDIR)/files/adguardhome.init $(1)/etc/init.d/adguardhome
 
 	$(INSTALL_DIR) $(1)/etc/config
-	$(INSTALL_DATA) ./files/adguardhome.config $(1)/etc/config/adguardhome
+	$(INSTALL_CONF) $(CURDIR)/files/adguardhome.config $(1)/etc/config/adguardhome
 
 	$(INSTALL_DIR) $(1)/etc/sysctl.d
-	$(INSTALL_CONF) ./files/adguardhome.sysctl $(1)/etc/sysctl.d/50-adguardhome.conf
+	$(INSTALL_CONF) $(CURDIR)/files/adguardhome.sysctl $(1)/etc/sysctl.d/50-adguardhome.conf
+
+	$(INSTALL_DIR) $(1)/etc/uci-defaults
+	$(INSTALL_BIN) $(CURDIR)/files/adguardhome.defaults $(1)/etc/uci-defaults/adguardhome
 endef
 
 $(eval $(call Download,adguardhome_frontend))

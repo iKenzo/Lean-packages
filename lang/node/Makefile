@@ -6,10 +6,24 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=node
 
-ifeq ($(CONFIG_NODEJS_22),y)
-PKG_VERSION:=v22.13.1
+ifeq ($(CONFIG_NODEJS_26),y)
+PKG_VERSION:=v26.8.1
 PKG_RELEASE:=1
-PKG_HASH:=cfce282119390f7e0c2220410924428e90dadcb2df1744c0c4a0e7baae387cc2
+PKG_HASH:=d1698832a1a10f050cdda044a3e3d6a748246811e2e7bc89ba9a8bd693dc45f2
+PATCH_DIR:=./patches/v26.x
+NODEJS_BIN_SUM:=b2b76660fa4ded4e0b2a41ee3c0c651cd52ea8170ead91ebac1e147ac3d55643
+else
+ifeq ($(CONFIG_NODEJS_24),y)
+PKG_VERSION:=v24.20.0
+PKG_RELEASE:=1
+PKG_HASH:=2732fc3f588dd335cd6779c06864f7cd424bb1b5ff9a1743059a66c54f9ca4a1
+PATCH_DIR:=./patches/v24.x
+NODEJS_BIN_SUM:=855d581f8a4eb1a8117e3426de25fe02770592febcfb31369aee1ffbfee9e8ec
+else
+ifeq ($(CONFIG_NODEJS_22),y)
+PKG_VERSION:=v22.23.0
+PKG_RELEASE:=1
+PKG_HASH:=3acfae100c7b855a4c76520ee0f95cadcace3f4254f16b7d4887f178fc95d4a0
 PATCH_DIR:=./patches/v22.x
 else
 ifeq ($(CONFIG_NODEJS_20),y)
@@ -45,6 +59,8 @@ endif
 endif
 endif
 endif
+endif
+endif
 
 PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION).tar.xz
 PKG_SOURCE_URL:=https://nodejs.org/dist/$(PKG_VERSION)
@@ -73,7 +89,7 @@ define Package/node
   TITLE:=Node.js is a platform built on Chrome's JavaScript runtime
   URL:=https://nodejs.org/
   DEPENDS:=@(HAS_FPU||KERNEL_MIPS_FPU_EMULATOR||SOFT_FLOAT) @!arc @!armeb @!powerpc \
-	   +libstdcpp +(NODEJS_18||NODEJS_20||NODEJS_22):libopenssl +zlib +libnghttp2 +libuv \
+	   +libstdcpp +libopenssl +zlib +libnghttp2 +libuv \
 	   +libcares +libatomic +NODEJS_ICU_SYSTEM:icu +NODEJS_ICU_SYSTEM:icu-full-data
 endef
 
@@ -83,7 +99,7 @@ define Package/node/description
    package ecosystem, npm, is the largest ecosystem of open source libraries in the world.
 
   *** The following preparations must be made on the host side. ***
-      1. gcc 8.3 or higher is required.
+      1. Node.js 24 and 26 require gcc 12.2 or higher.
       2. To build a 32-bit target, gcc-multilib, g++-multilib are required.
       3. Requires libatomic package. (If necessary, install the 32-bit library at the same time.)
      ex) sudo apt-get install gcc-multilib g++-multilib
@@ -108,33 +124,42 @@ define Package/node/config
 	choice
 		prompt "Version Selection"
 		default NODEJS_12 if mips||mipsel||mips64||mips64el
-		default NODEJS_20
+		default NODEJS_24
 		help
 		 Select node.js version.
 		 The host package version is also the same.
 
 		config NODEJS_12
+			depends on mips||mipsel||mips64||mips64el
 			bool "12.x End-of-life : Only for MIPS"
 
 		config NODEJS_14
-			depends on !(mips||mipsel||mips64||mips64el)
+			depends on !(mips||mipsel||mips64||mips64el||loongarch64)
 			bool "14.x End-of-Life"
 
 		config NODEJS_16
-			depends on !(mips||mipsel||mips64||mips64el)
+			depends on !(mips||mipsel||mips64||mips64el||loongarch64)
 			bool "16.x End-of-Life"
 
 		config NODEJS_18
-			depends on !(mips||mipsel||mips64||mips64el)
+			depends on !(mips||mipsel||mips64||mips64el||loongarch64)
 			bool "18.x Maintenance LTS"
 			
 		config NODEJS_20
-			depends on !(mips||mipsel||mips64||mips64el)
+			depends on !(mips||mipsel||mips64||mips64el||loongarch64)
 			bool "20.x Active LTS"
 			
 		config NODEJS_22
 			depends on !(mips||mipsel||mips64||mips64el)
-			bool "22.x Active LTS"
+			bool "22.x Maintenance LTS"
+
+		config NODEJS_24
+			depends on !(mips||mipsel||mips64||mips64el||loongarch64)
+			bool "24.x Active LTS"
+
+		config NODEJS_26
+			depends on !(mips||mipsel||mips64||mips64el||loongarch64)
+			bool "26.x Current"
 	endchoice
 
 	if PACKAGE_node
@@ -157,24 +182,39 @@ define Package/node/config
 		endchoice
 	endif
 
+	config NODEJS_HOST_BIN
+		bool "Use the official Node.js binary for the host build"
+		depends on HOST_OS_LINUX && (NODEJS_24 || NODEJS_26)
+		default y
+		help
+		  Reduce build time by installing the matching official linux-x64
+		  Node.js binary as the host package.
+
 	endmenu
 endef
 
-NODEJS_CPU:=$(subst powerpc,ppc,$(subst aarch64,arm64,$(subst x86_64,x64,$(subst i386,ia32,$(ARCH)))))
+NODEJS_CPU:=$(subst powerpc,ppc,$(subst loongarch64,loong64,$(subst aarch64,arm64,$(subst x86_64,x64,$(subst i386,ia32,$(ARCH))))))
 
 ifeq ($(CONFIG_NODEJS_10),y)
 TARGET_LDFLAGS+=-latomic
 endif
 
-ifneq ($(CONFIG_ARCH_64BIT),y)
-FORCE_32BIT:=-m32
+ifeq ($(CONFIG_NODEJS_12),y)
+NODEJS_NO_LOAD:=cctest.target.mk embedtest.target.mk node_mksnapshot.target.mk overlapped-checker.target.mk \
+	mkcodecache.target.mk tools/v8_gypfiles/torque_base.target.mk \
+	tools/v8_gypfiles/v8_base.host.mk tools/v8_gypfiles/v8_base_without_compiler.host.mk \
+	tools/v8_gypfiles/v8_compiler.host.mk tools/v8_gypfiles/v8_compiler_for_mksnapshot.host.mk \
+	tools/v8_gypfiles/v8_compiler_opt.host.mk tools/v8_gypfiles/v8_init.host.mk \
+	tools/v8_gypfiles/v8_initializers.host.mk tools/v8_gypfiles/v8_nosnapshot.host.mk
+else
+NODEJS_NO_LOAD:=cctest.target.mk embedtest.target.mk node_mksnapshot.target.mk overlapped-checker.target.mk \
+	mkcodecache.target.mk tools/v8_gypfiles/torque_base.target.mk tools/v8_gypfiles/v8_init.target.mk
 endif
 
 MAKE_VARS+= \
 	DESTCPU=$(NODEJS_CPU) \
-	NO_LOAD='cctest.target.mk embedtest.target.mk node_mksnapshot.target.mk overlapped-checker.target.mk \
-		mkcodecache.target.mk tools/v8_gypfiles/torque_base.target.mk tools/v8_gypfiles/v8_init.target.mk' \
-	LD_LIBRARY_PATH=$(STAGING_DIR_HOSTPKG)/share/icu/current/lib
+		NO_LOAD='$(NODEJS_NO_LOAD)' \
+		LD_LIBRARY_PATH=$(STAGING_DIR_HOSTPKG)/share/icu/current/lib
 
 HOST_MAKE_VARS+=NO_LOAD='cctest.target.mk embedtest.target.mk overlapped-checker.target.mk'
 
@@ -192,6 +232,9 @@ CONFIGURE_ARGS:= \
 	--shared-openssl \
 	--shared-nghttp2 \
 	--shared-cares \
+	$(if $(CONFIG_NODEJS_26),--v8-disable-temporal-support) \
+	$(if $(CONFIG_NODEJS_26),$(if $(CONFIG_ARCH_64BIT),,--without-ffi)) \
+	--without-snapshot \
 	--with-intl=$(if $(CONFIG_NODEJS_ICU_SMALL),small-icu,$(if $(CONFIG_NODEJS_ICU_SYSTEM),system-icu,none)) \
 	$(if $(findstring mips,$(NODEJS_CPU)), \
 		$(if $(CONFIG_SOFT_FLOAT),--with-mips-float-abi=soft)) \
@@ -230,10 +273,41 @@ define Package/node-npm/install
 	$(LN) ../lib/node_modules/npm/bin/npx-cli.js $(1)/usr/bin/npx
 endef
 
+ifeq ($(CONFIG_NODEJS_HOST_BIN),y)
+
+NODEJS_BIN:=node-$(PKG_VERSION)-linux-x64.tar.gz
+
+define Download/nodebin
+	URL:=https://nodejs.org/download/release/$(PKG_VERSION)/
+	FILE:=$(NODEJS_BIN)
+	HASH:=$(NODEJS_BIN_SUM)
+endef
+
+define Host/Prepare
+	$(eval $(call Download,nodebin))
+endef
+
+define Host/Configure
+endef
+
+define Host/Compile
+endef
+
+define Host/Install
+	rm -f $(1)/bin/npm $(1)/bin/npx $(1)/bin/corepack
+	rm -rf $(1)/lib/node_modules/npm $(1)/lib/node_modules/corepack
+	$(TAR) xvf $(DL_DIR)/$(NODEJS_BIN) -C $(1) --strip-components=1
+	rm -f $(1)/{CHANGELOG.md,LICENSE,README.md}
+endef
+
+else
+
 define Host/Install
 	$(RM) -rf $(1)/lib/node_modules/npm
 	$(call Host/Install/Default)
 endef
+
+endif
 
 define Package/node-npm/postrm
 #!/bin/sh
